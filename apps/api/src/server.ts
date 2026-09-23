@@ -161,7 +161,7 @@ app.post('/auth/telegram', { config: { rateLimit: { max: 10, timeWindow: '1 minu
   reply.setCookie('session', token, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/',
     maxAge: 30 * 86400,
   })
