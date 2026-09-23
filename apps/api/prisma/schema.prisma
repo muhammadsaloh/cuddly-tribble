@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+enum RequestStatus {
+  ACTIVE
+  MATCHED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+enum Currency {
+  USD
+  UZS
+}
+enum RateType {
+  MARKET
+  CUSTOM
+}
+enum ExchangeMethod {
+  CASH
+  BANK_TRANSFER
+  EITHER
+}
+enum MatchStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  COMPLETED
+  CANCELLED
+}
+enum NotificationType {
+  MATCH_FOUND
+  MATCH_ACCEPTED
+  MATCH_DECLINED
+  NEW_MESSAGE
+  REQUEST_EXPIRING
+  REQUEST_EXPIRED
+  EXCHANGE_COMPLETED
+  REVIEW_RECEIVED
+}
+enum ReportStatus {
+  OPEN
+  RESOLVED
+}
+
+model User {
+  id String @id @default(cuid())
+  telegramId BigInt @unique
+  username String?
+  firstName String
+  lastName String?
+  avatarUrl String?
+  location String?
+  preferredMethods ExchangeMethod[] @default([])
+  verified Boolean @default(false)
+  role Role @default(USER)
+  suspendedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  requests ExchangeRequest[]
+  sentMessages Message[]
+  conversations ConversationParticipant[]
+  notifications Notification[]
+  reviewsGiven Review[] @relation("reviewer")
+  reviewsReceived Review[] @relation("reviewee")
+  bookmarks Bookmark[] @relation("BookmarkOwner")
+  bookmarkedBy Bookmark[] @relation("BookmarkTarget")
+  matchesA Match[] @relation("matchUserA")
+  matchesB Match[] @relation("matchUserB")
+  auditLogs AuditLog[]
+  reportsMade Report[] @relation("reporter")
+  reportsReceived Report[] @relation("reported")
+  productEvents ProductEvent[]
+}
+
+model Session {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+}
+
+model ExchangeRequest {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  needCurrency Currency
+  offerCurrency Currency
+  needAmount Decimal @db.Decimal(20, 2)
+  offerAmount Decimal @db.Decimal(20, 2)
+  exchangeRate Decimal @db.Decimal(20, 4)
+  rateType RateType
+  exchangeMethod ExchangeMethod
+  location String?
+  status RequestStatus @default(ACTIVE)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  matchesA Match[] @relation("matchRequestA")
+  matchesB Match[] @relation("matchRequestB")
+  bookmarks Bookmark[]
+  @@index([status, needCurrency, createdAt])
+  @@index([status, expiresAt])
+  @@index([userId, status])
+}
+
+model Match {
+  id String @id @default(cuid())
+  requestAId String
+  requestBId String
+  requestA ExchangeRequest @relation("matchRequestA", fields: [requestAId], references: [id])
+  requestB ExchangeRequest @relation("matchRequestB", fields: [requestBId], references: [id])
+  userAId String
+  userBId String
+  userA User @relation("matchUserA", fields: [userAId], references: [id])
+  userB User @relation("matchUserB", fields: [userBId], references: [id])
+  status MatchStatus @default(PENDING)
+  score Int
+  suggestedUsd Decimal @db.Decimal(20, 2)
+  suggestedUzs Decimal @db.Decimal(20, 2)
+  acceptedA Boolean @default(false)
+  acceptedB Boolean @default(false)
+  completedA Boolean @default(false)
+  completedB Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  conversation Conversation?
+  reviews Review[]
+  @@unique([requestAId, requestBId])
+  @@index([userAId, status])
+  @@index([userBId, status])
+}
+
+model Conversation {
+  id String @id @default(cuid())
+  matchId String @unique
+  match Match @relation(fields: [matchId], references: [id])
+  participants ConversationParticipant[]
+  messages Message[]
+  createdAt DateTime @default(now())
+}
+
+model ConversationParticipant {
+  conversationId String
+  userId String
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+  lastReadAt DateTime?
+  @@id([conversationId, userId])
+}
+
+model Message {
+  id String @id @default(cuid())
+  conversationId String
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId String
+  sender User @relation(fields: [senderId], references: [id])
+  body String @db.VarChar(2000)
+  createdAt DateTime @default(now())
+  @@index([conversationId, createdAt])
+}
+
+model Notification {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type NotificationType
+  title String
+  body String
+  link String?
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, readAt, createdAt])
+}
+
+model Review {
+  id String @id @default(cuid())
+  matchId String
+  match Match @relation(fields: [matchId], references: [id])
+  reviewerId String
+  reviewer User @relation("reviewer", fields: [reviewerId], references: [id])
+  revieweeId String
+  reviewee User @relation("reviewee", fields: [revieweeId], references: [id])
+  rating Int
+  comment String? @db.VarChar(500)
+  createdAt DateTime @default(now())
+  @@unique([matchId, reviewerId])
+  @@index([revieweeId])
+}
+
+model Bookmark {
+  id String @id @default(cuid())
+  userId String
+  user User @relation("BookmarkOwner", fields: [userId], references: [id], onDelete: Cascade)
+  requestId String?
+  request ExchangeRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  targetUserId String?
+  targetUser User? @relation("BookmarkTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, requestId])
+  @@unique([userId, targetUserId])
+}
+
+model ExchangeRate {
+  id String @id @default(cuid())
+  usdUzs Decimal @db.Decimal(20, 4)
+  source String
+  fetchedAt DateTime
+  createdAt DateTime @default(now())
+  @@index([fetchedAt])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  actorId String?
+  actor User? @relation(fields: [actorId], references: [id])
+  action String
+  entityType String
+  entityId String
+  details Json?
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
+
+model Report {
+  id String @id @default(cuid())
+  reporterId String
+  reporter User @relation("reporter", fields: [reporterId], references: [id])
+  reportedUserId String
+  reportedUser User @relation("reported", fields: [reportedUserId], references: [id])
+  reason String @db.VarChar(500)
+  status ReportStatus @default(OPEN)
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  @@index([status, createdAt])
+  @@index([reportedUserId])
+}
+
+model ProductEvent {
+  id String @id @default(cuid())
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name String
+  entityId String?
+  createdAt DateTime @default(now())
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+}

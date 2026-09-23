@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: almash_test
+          POSTGRES_USER: almash
+          POSTGRES_PASSWORD: almash
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U almash -d almash_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://almash:almash@127.0.0.1:5432/almash_test?schema=public
+      SESSION_SECRET: ci-only-session-secret-with-more-than-32-characters
+      FRONTEND_URL: http://127.0.0.1:5173
+      API_URL: http://127.0.0.1:3000
+      VITE_API_URL: http://127.0.0.1:3000
+      TELEGRAM_BOT_TOKEN: 123456:ci-only-test-token
+      E2E_WEB_URL: http://127.0.0.1:5173
+      E2E_API_URL: http://127.0.0.1:3000
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.5.2 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @almash/api exec prisma generate
+      - run: pnpm --filter @almash/api db:deploy
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test
+      - run: pnpm --filter @almash/web exec playwright install --with-deps chromium
+      - name: Start application
+        run: |
+          pnpm --filter @almash/api start > /tmp/almash-api.log 2>&1 &
+          pnpm --filter @almash/web dev -- --host 127.0.0.1 > /tmp/almash-web.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/health >/dev/null && curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/almash-api.log
+          cat /tmp/almash-web.log
+          exit 1
+      - run: pnpm test:e2e
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          cat /tmp/almash-api.log || true
+          cat /tmp/almash-web.log || true

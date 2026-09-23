@@ -1,0 +1,19 @@
+{
+  "name": "almash",
+  "private": true,
+  "packageManager": "pnpm@11.5.2",
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm --recursive build",
+    "typecheck": "pnpm --recursive typecheck",
+    "test": "pnpm --recursive test",
+    "test:e2e": "pnpm --filter @almash/web test:e2e",
+    "lint": "pnpm --recursive lint",
+    "format:check": "prettier --check .",
+    "db:migrate": "pnpm --filter @almash/api db:migrate",
+    "db:seed": "pnpm --filter @almash/api db:seed"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.0"
+  }
+}

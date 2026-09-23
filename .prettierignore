@@ -1,0 +1,8 @@
+node_modules
+.pnpm-store
+dist
+apps/web/test-results
+apps/web/playwright-report
+pnpm-lock.yaml
+apps/web/src/routeTree.gen.ts
+apps/api/prisma/migrations
